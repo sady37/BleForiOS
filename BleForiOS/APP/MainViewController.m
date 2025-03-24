@@ -90,6 +90,7 @@
     
     // 加载蓝牙权限
     [self checkBluetoothPermissions];
+
     
     // 加载最近配置
     [self loadRecentConfigs];

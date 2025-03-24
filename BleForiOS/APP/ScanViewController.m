@@ -177,11 +177,18 @@
     [self setupConstraints];
     [self setupActions];
     
-    // 检查蓝牙权限
-    [self checkBluetoothPermissions];
+	// 初始化设置
+    _currentScanModule = ProductorRadarQL; // 默认选择Radar模式
+    _currentFilterType = FilterTypeDeviceName; // Radar模式下默认使用设备名称过滤
     
-    // 加载设置
-    [self loadSettings];
+	// 检查蓝牙权限
+    //[self checkBluetoothPermissions];
+    
+    // 更新UI显示
+    [self updateFilterHint];
+	[self updateScanButtonState:NO]; // 初始化扫描按钮状态为未扫描
+	[self.segmentedControl setSelectedSegmentIndex:0]; // 默认选择第一个分段
+	[self.tableView reloadData]; // 确保表格视图加载完成    
 }
 
 - (void)viewWillAppear:(BOOL)animated {
@@ -219,13 +226,6 @@
     _backButton.translatesAutoresizingMaskIntoConstraints = NO;
     [self.view addSubview:_backButton];
 
-	// 初始化标题标签
-	//_titleLabel = [[UILabel alloc] init];
-	//_titleLabel.text = @"Scan Devices";
-	//_titleLabel.font = [UIFont boldSystemFontOfSize:18];
-	//_titleLabel.textAlignment = NSTextAlignmentCenter;
-	//_titleLabel.translatesAutoresizingMaskIntoConstraints = NO;
-	//[self.view addSubview:_titleLabel];
 
     // 初始化配置按钮
     _configButton = [UIButton buttonWithType:UIButtonTypeSystem];
@@ -267,9 +267,9 @@
     _scanButton = [UIButton buttonWithType:UIButtonTypeSystem];
     [_scanButton setTitle:@"Scan" forState:UIControlStateNormal];
     [_scanButton setTitle:@"Stop" forState:UIControlStateSelected];
-	[_scanButton setTitleColor:[UIColor systemBackgroundColor] forState:UIControlStateNormal]; // 新增
-    _scanButton.backgroundColor = [UIColor systemBlueColor]; // 新增
-    _scanButton.layer.cornerRadius = 5.0; // 新增
+	[_scanButton setTitleColor:[UIColor systemBackgroundColor] forState:UIControlStateNormal];
+    _scanButton.backgroundColor = [UIColor systemBlueColor];
+    _scanButton.layer.cornerRadius = 5.0;
     [self.view addSubview:_scanButton];
   
     // 初始化表格视图
@@ -302,12 +302,6 @@
 	    [_backButton.heightAnchor constraintEqualToConstant:44] // 高度设为 44
 	]];
 
-	// 设置标题标签的约束
-	//[NSLayoutConstraint activateConstraints:@[
-    //	[_titleLabel.centerXAnchor constraintEqualToAnchor:self.view.centerXAnchor], // 水平居中
-    //	[_titleLabel.centerYAnchor constraintEqualToAnchor:_backButton.centerYAnchor], // 与backButton垂直对齐
-	//]];
-
     // 设置配置按钮的约束
     [NSLayoutConstraint activateConstraints:@[
         [_configButton.trailingAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.trailingAnchor constant:-20], // 距离右边 20 点
@@ -327,10 +321,10 @@
 	[NSLayoutConstraint activateConstraints:@[
 	    [_filterLabel.topAnchor constraintEqualToAnchor:_segmentedControl.bottomAnchor constant:16],
 	    [_filterLabel.leadingAnchor constraintEqualToAnchor:self.view.leadingAnchor constant:8],
-   		[_filterLabel.trailingAnchor constraintLessThanOrEqualToAnchor:_filterTextField.leadingAnchor constant:-8], // 自适应宽度
+   		//[_filterLabel.trailingAnchor constraintLessThanOrEqualToAnchor:_filterTextField.leadingAnchor constant:-8], // 自适应宽度
     	[_filterLabel.centerYAnchor constraintEqualToAnchor:_filterTextField.centerYAnchor],
 		// 宽度约束
-        [_filterLabel.widthAnchor constraintGreaterThanOrEqualToConstant:80], // 最小宽度100
+        [_filterLabel.widthAnchor constraintGreaterThanOrEqualToConstant:40], // 最小宽度40
         //[_filterLabel.widthAnchor constraintLessThanOrEqualToConstant:180]    // 最大宽度180
 	]];
 
@@ -339,6 +333,7 @@
 	    [_filterTextField.topAnchor constraintEqualToAnchor:_segmentedControl.bottomAnchor constant:16],
 	    [_filterTextField.leadingAnchor constraintEqualToAnchor:_filterLabel.trailingAnchor constant:8],
 	    [_filterTextField.trailingAnchor constraintEqualToAnchor:_scanButton.leadingAnchor constant:-8],
+		[_filterLabel.centerYAnchor constraintEqualToAnchor:_filterTextField.centerYAnchor],
 		        // 宽度约束
         [_filterTextField.widthAnchor constraintGreaterThanOrEqualToConstant:100] // 最小宽度100
 	]];
@@ -372,62 +367,6 @@
     [_segmentedControl addTarget:self action:@selector(segmentChanged:) forControlEvents:UIControlEventValueChanged];
 }
 
-- (void)loadSettings {
-    // 加载保存的过滤器类型
-    FilterType savedFilterType = [_configStorage getFilterType];
-    
-    // 验证加载的过滤器类型是否有效
-    switch (savedFilterType) {
-        case FilterTypeDeviceName:
-        case FilterTypeMac:
-        case FilterTypeUUID:
-            _currentFilterType = savedFilterType;
-            break;
-        default:
-            _currentFilterType = FilterTypeDeviceName; // 默认值
-            break;
-    }
-}
-
-#pragma mark - 蓝牙权限检查
-
-- (void)checkBluetoothPermissions {
-    // iOS 13+ 需要显式请求蓝牙权限
-    if (@available(iOS 13.0, *)) {
-        CBCentralManager *tempManager = [[CBCentralManager alloc] initWithDelegate:nil queue:nil];
-        CBManagerState state = tempManager.state;
-        
-        if (state == CBManagerStateUnauthorized) {
-            [self showPermissionAlert];
-        }
-    }
-}
-
-- (void)showPermissionAlert {
-    UIAlertController *alert = [UIAlertController 
-                                alertControllerWithTitle:@"Bluetooth Permission Required"
-                                message:@"This app needs Bluetooth permission to scan for devices. Please enable Bluetooth access in Settings."
-                                preferredStyle:UIAlertControllerStyleAlert];
-    
-    UIAlertAction *openSettings = [UIAlertAction 
-                                  actionWithTitle:@"Open Settings"
-                                  style:UIAlertActionStyleDefault
-                                  handler:^(UIAlertAction * _Nonnull action) {
-        [[UIApplication sharedApplication] openURL:[NSURL URLWithString:UIApplicationOpenSettingsURLString]
-                                          options:@{}
-                                completionHandler:nil];
-    }];
-    
-    UIAlertAction *cancel = [UIAlertAction 
-                            actionWithTitle:@"Cancel"
-                            style:UIAlertActionStyleCancel
-                            handler:nil];
-    
-    [alert addAction:openSettings];
-    [alert addAction:cancel];
-    
-    [self presentViewController:alert animated:YES completion:nil];
-}
 
 #pragma mark - 扫描控制
 
@@ -610,21 +549,25 @@
  * 更新过滤提示信息
  */
 - (void)updateFilterHint {
-    // 根据当前过滤类型更新标签和输入框提示
+    
+    // Update label and placeholder based on current filter type
     switch (_currentFilterType) {
         case FilterTypeDeviceName:
-            _filterLabel.text = @"FilterDeviceName";
+            _filterLabel.text = @"DeviceName";
             _filterTextField.placeholder = @"TSBLU,...";
             break;
         case FilterTypeMac:
-            _filterLabel.text = @"FilterMAC";
+            _filterLabel.text = @"MAC";
             _filterTextField.placeholder = @"XX:XX:XX:XX:XX:XX";
             break;
         case FilterTypeUUID:
-            _filterLabel.text = @"FilterUUID";
+            _filterLabel.text = @"UUID";
             _filterTextField.placeholder = @"XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX";
             break;
     }
+	if (_currentScanModule != ProductorEspBle) {
+		_filterLabel.text = @"Filter:invaild"; // 仅在非Esp模式下设置过滤前缀
+	}
 }
 
 /**
@@ -639,21 +582,13 @@
                                       filterType:_currentFilterType // Pass enum directly
                                       completion:^(NSString *radarDeviceName, FilterType filterType) {
         // 更新当前配置
-        self->_currentFilterPrefix = radarDeviceName;
+        //self->_currentFilterPrefix = radarDeviceName;
         self->_currentFilterType = filterType;
-        
-        // 更新UI
         [self updateFilterHint];
-        self->_filterTextField.text = radarDeviceName;
-        
-        // 保存配置
-        [self->_configStorage saveRadarDeviceName:radarDeviceName];
-        [self->_configStorage saveFilterType:filterType];
         
         // 如果正在扫描，停止并重新开始
         if (self->_isScanning) {
             [self stopScan];
-            [self startScan];
         }
     }];
     
@@ -668,22 +603,28 @@
     switch (sender.selectedSegmentIndex) {
         case 0:
             _currentScanModule = ProductorRadarQL;
+            _currentFilterType = FilterTypeDeviceName; // Reset to device name for Radar
             break;
         case 1:
             _currentScanModule = ProductorSleepBoardHS;
+            _currentFilterType = FilterTypeDeviceName; // Reset to device name for SleepBoard
             break;
         case 2:
             _currentScanModule = ProductorEspBle;
+            _currentFilterType = [_configStorage getFilterType]; // Use stored filter type for Esp
             break;
         default:
             _currentScanModule = ProductorRadarQL;
+            _currentFilterType = FilterTypeDeviceName;
             break;
     }
     
+	// Update UI to reflect the new settings
+    [self updateFilterHint];
+
     // 如果正在扫描，重新开始扫描
     if (_isScanning) {
         [self stopScan];
-        [self startScan];
     }
 }
 

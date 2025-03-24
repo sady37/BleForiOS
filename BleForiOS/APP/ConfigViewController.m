@@ -21,8 +21,7 @@
 @property (nonatomic, strong) UISegmentedControl *filterTypeSegment;
 @property (nonatomic, strong) UIButton *cancelButton;
 @property (nonatomic, strong) UIButton *confirmButton;
-
-
+@property (nonatomic, strong) ConfigStorage *configStorage;
 
 // 数据和回调
 @property (nonatomic, copy) NSString *currentRadarName;
@@ -34,13 +33,21 @@
 @implementation ConfigViewController
 
 #pragma mark - 初始化方法
-
 - (instancetype)initWithRadarDeviceName:(NSString *)radarDeviceName 
                              filterType:(FilterType)filterType
                              completion:(ConfigCompletionBlock)completion {
     self = [super init];
     if (self) {
-        _currentRadarName = [radarDeviceName copy];
+        // Initialize ConfigStorage first
+        _configStorage = [[ConfigStorage alloc] init];
+        
+        // If radarDeviceName is empty, try to get it from storage
+        if (radarDeviceName.length == 0) {
+            _currentRadarName = [_configStorage getRadarDeviceName];
+        } else {
+            _currentRadarName = [radarDeviceName copy];
+        }
+        
         _currentFilterType = filterType;
         _completionBlock = [completion copy];
         
@@ -50,7 +57,6 @@
     }
     return self;
 }
-
 #pragma mark - 视图生命周期
 
 - (void)viewDidLoad {
@@ -58,10 +64,12 @@
     
     // 设置背景
     self.view.backgroundColor = [UIColor systemBackgroundColor];
-        
+
+	_configStorage = [[ConfigStorage alloc] init];    
     // 初始化UI组件
     [self setupViews];
     [self setupConstraints];
+
     
     // 更新UI以反映当前配置
     [self updateUIWithCurrentConfig];
@@ -203,8 +211,13 @@
 - (void)handleConfirmButton {
     // 获取用户输入的雷达设备名
     NSString *radarName = _radarNameTextField.text;
+    radarName = [radarName stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]]; // 去除前后空格
+
     if (radarName.length == 0) {
         radarName = @"TSBLU"; // 默认值
+    } else {
+        // Save directly to storage
+        [_configStorage saveRadarDeviceName:radarName];
     }
     
     // 获取用户选择的过滤类型
@@ -224,7 +237,10 @@
             break;
     }
     
-    CONFIGLOG(@"确认配置: 设备名=%@, 过滤类型=%ld", radarName, (long)filterType);
+    // Save filter type too
+    [_configStorage saveFilterType:filterType];
+    
+    CONFIGLOG(@"Confirm configuration: devicename=%@, filter type=%ld", radarName, (long)filterType);
     
     // 调用回调
     if (_completionBlock) {
